@@ -1,75 +1,9 @@
 import crypto from 'crypto';
 import { getCollectionModel, serializeDocument } from './db.js';
-
-const sockets = new Map();
-const pending = new Map();
-
-export function createPairingCode() {
-  return crypto.randomBytes(24).toString('base64url');
-}
-
-export function setupDeviceHub(io) {
-  io.use(async (socket, next) => {
-    try {
-      const { deviceId, token } = socket.handshake.auth || {};
-      if (!deviceId || !token) return next(new Error('Missing device credentials'));
-      const Device = getCollectionModel('connected_devices');
-      const device = await Device.findOne({ device_id: deviceId, pairing_token: token });
-      if (!device) return next(new Error('Invalid device credentials'));
-      socket.deviceId = deviceId;
-      next();
-    } catch (error) { next(error); }
-  });
-
-  io.on('connection', async socket => {
-    const deviceId = socket.deviceId;
-    sockets.set(deviceId, socket);
-    const Device = getCollectionModel('connected_devices');
-    await Device.updateOne({ device_id: deviceId }, { $set: { status: 'online', last_seen_at: new Date().toISOString(), socket_id: socket.id } });
-
-    socket.on('heartbeat', async payload => {
-      await Device.updateOne({ device_id: deviceId }, { $set: { status: 'online', last_seen_at: new Date().toISOString(), system: payload } });
-    });
-
-    socket.on('command:result', async result => {
-      const waiter = pending.get(result.commandId);
-      if (waiter) {
-        pending.delete(result.commandId);
-        waiter.resolve(result);
-      }
-    });
-
-    socket.on('disconnect', async () => {
-      sockets.delete(deviceId);
-      await Device.updateOne({ device_id: deviceId }, { $set: { status: 'offline', last_seen_at: new Date().toISOString() } });
-    });
-  });
-}
-
-export function isDeviceOnline(deviceId) { return sockets.has(deviceId); }
-
-export async function executeOnDevice(deviceId, tool, args = {}, timeoutMs = 30000) {
-  const socket = sockets.get(deviceId);
-  if (!socket) throw new Error('Device is offline');
-  const commandId = crypto.randomUUID();
-  const Command = getCollectionModel('device_commands');
-  await Command.create({ command_id: commandId, device_id: deviceId, tool, args, status: 'pending', created_at: new Date().toISOString() });
-
-  const result = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(commandId);
-      reject(new Error('Device command timed out'));
-    }, timeoutMs);
-    pending.set(commandId, { resolve: value => { clearTimeout(timer); resolve(value); }, reject });
-    socket.emit('command:execute', { commandId, tool, args });
-  });
-
-  await Command.updateOne({ command_id: commandId }, { $set: { status: result.success ? 'executed' : 'failed', result, completed_at: new Date().toISOString() } });
-  return result;
-}
-
-export async function getDevices() {
-  const Device = getCollectionModel('connected_devices');
-  const docs = await Device.find({}).sort({ last_seen_at: -1 }).lean();
-  return docs.map(serializeDocument).map(d => ({ ...d, pairing_token: undefined, socket_id: undefined }));
-}
+const sockets=new Map(),pending=new Map(); const hash=v=>crypto.createHash('sha256').update(v).digest('hex');
+export const createPairingCode=()=>crypto.randomBytes(32).toString('base64url');
+export function setupDeviceHub(io){io.use(async(socket,next)=>{try{const{deviceId,token}=socket.handshake.auth||{};if(!deviceId||!token)return next(new Error('Missing device credentials'));const Device=getCollectionModel('connected_devices');const device=await Device.findOne({device_id:deviceId,pairing_token_hash:hash(token)});if(!device)return next(new Error('Invalid device credentials'));socket.deviceId=deviceId;socket.userId=device.user_id;next();}catch(e){next(e);}});io.on('connection',async socket=>{const deviceId=socket.deviceId;sockets.set(deviceId,socket);const Device=getCollectionModel('connected_devices');await Device.updateOne({device_id:deviceId},{$set:{status:'online',last_seen_at:new Date().toISOString(),socket_id:socket.id}});socket.on('heartbeat',payload=>Device.updateOne({device_id:deviceId},{$set:{status:'online',last_seen_at:new Date().toISOString(),system:payload}}));socket.on('command:result',result=>{const w=pending.get(result.commandId);if(w){pending.delete(result.commandId);w.resolve(result);}});socket.on('disconnect',async()=>{sockets.delete(deviceId);await Device.updateOne({device_id:deviceId},{$set:{status:'offline',last_seen_at:new Date().toISOString()}});});});}
+export const isDeviceOnline=id=>sockets.has(id);
+async function authorizeDevice(deviceId,user){const Device=getCollectionModel('connected_devices');const filter={device_id:deviceId,...(user.role==='admin'?{}:{user_id:user.id})};const d=await Device.findOne(filter);if(!d)throw Object.assign(new Error('Device not found or not owned by this user'),{status:404});return d;}
+export async function executeOnDevice(deviceId,tool,args={},timeoutMs=30000,user){await authorizeDevice(deviceId,user);const socket=sockets.get(deviceId);if(!socket)throw Object.assign(new Error('Device is offline'),{status:409});const commandId=crypto.randomUUID();const Command=getCollectionModel('device_commands');await Command.create({command_id:commandId,device_id:deviceId,user_id:user.id,tool,args,status:'pending',created_at:new Date().toISOString()});const result=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(commandId);reject(new Error('Device command timed out'));},timeoutMs);pending.set(commandId,{resolve:v=>{clearTimeout(timer);resolve(v);},reject});socket.emit('command:execute',{commandId,tool,args});});await Command.updateOne({command_id:commandId},{$set:{status:result.success?'executed':'failed',result,completed_at:new Date().toISOString()}});return result;}
+export async function getDevices(user){const Device=getCollectionModel('connected_devices');const docs=await Device.find(user.role==='admin'?{}:{user_id:user.id}).sort({last_seen_at:-1}).lean();return docs.map(serializeDocument).map(d=>({...d,pairing_token_hash:undefined,socket_id:undefined}));}

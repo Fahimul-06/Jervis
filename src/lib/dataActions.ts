@@ -465,10 +465,33 @@ export async function executeCommand(
       break;
     }
 
-    default:
-      response = getUnknownResponse(input);
-      actionTaken = 'Processed unknown command';
+    default: {
+      try {
+        const body = await runDeviceAssistant(input, confirmed);
+        if (body.data?.matched === false) {
+          response = body.data.response || getUnknownResponse(input);
+          actionTaken = 'LLM planner found no safe device action';
+        } else {
+          const result = body.data?.result;
+          response = result?.success
+            ? (body.data.response || `Completed ${body.data.tool} on the paired device.`)
+            : `The paired device reported an error: ${result?.error || 'Unknown error'}`;
+          actionTaken = `LLM-planned device tool: ${body.data?.tool || 'unknown'}`;
+          success = Boolean(result?.success);
+        }
+      } catch (error) {
+        const typed = error as Error & { status?: number; body?: { requiresConfirmation?: boolean } };
+        if (typed.status === 409 && typed.body?.requiresConfirmation) {
+          response = 'This AI-planned device action requires confirmation before it can run.';
+          actionTaken = 'Requested confirmation for AI-planned action';
+          success = false;
+        } else {
+          response = getUnknownResponse(input);
+          actionTaken = 'No matching local or LLM command';
+        }
+      }
       break;
+    }
   }
 
   return { intent, response, actionTaken, success, navigateTo };

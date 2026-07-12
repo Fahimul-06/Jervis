@@ -1,3 +1,4 @@
+import { authFetch } from './auth';
 type Filter = { field: string; operator: string; value: unknown };
 type Order = { field: string; ascending?: boolean; nullsFirst?: boolean };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,21 +47,21 @@ class MongoQueryBuilder {
     try {
       let response: Response;
       if (this.operation === 'select') {
-        response = await fetch(`${API_URL}/db/${this.collection}/query`, {
+        response = await authFetch(`${API_URL}/db/${this.collection}/query`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filters: this.filters, orders: this.orders, limit: this.maxRows, countOnly: this.countOnly, single: this.singleResult, or: this.orExpression }),
         });
       } else if (this.operation === 'insert') {
-        response = await fetch(`${API_URL}/db/${this.collection}`, {
+        response = await authFetch(`${API_URL}/db/${this.collection}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: this.payload }),
         });
       } else if (this.operation === 'update') {
-        response = await fetch(`${API_URL}/db/${this.collection}`, {
+        response = await authFetch(`${API_URL}/db/${this.collection}`, {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: this.payload, filters: this.filters }),
         });
       } else {
-        response = await fetch(`${API_URL}/db/${this.collection}`, {
+        response = await authFetch(`${API_URL}/db/${this.collection}`, {
           method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters: this.filters }),
         });
       }

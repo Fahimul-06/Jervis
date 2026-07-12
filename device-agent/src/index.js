@@ -2,11 +2,15 @@ import 'dotenv/config';
 import os from 'os';
 import { io } from 'socket.io-client';
 import { tools } from './tools.js';
+import { loadSecureConfig } from './secureStore.js';
 
-const serverUrl = process.env.JERVIS_SERVER_URL;
-const deviceId = process.env.JERVIS_DEVICE_ID;
-const token = process.env.JERVIS_PAIRING_TOKEN;
-if (!serverUrl || !deviceId || !token) throw new Error('Set JERVIS_SERVER_URL, JERVIS_DEVICE_ID and JERVIS_PAIRING_TOKEN in device-agent/.env');
+const secure = loadSecureConfig() || {};
+const serverUrl = secure.serverUrl || process.env.JERVIS_SERVER_URL;
+const deviceId = secure.deviceId || process.env.JERVIS_DEVICE_ID;
+const token = secure.pairingToken || process.env.JERVIS_PAIRING_TOKEN;
+if (secure.allowedPaths?.length) process.env.JERVIS_ALLOWED_PATHS = secure.allowedPaths.join(',');
+if (secure.screenshotDir) process.env.JERVIS_SCREENSHOT_DIR = secure.screenshotDir;
+if (!serverUrl || !deviceId || !token) throw new Error('Pair this PC first with: npm run pair');
 
 const socket = io(serverUrl, { transports:['websocket','polling'], reconnection:true, auth:{deviceId,token} });
 socket.on('connect', () => console.log(`JERVIS agent connected as ${deviceId} (${os.hostname()})`));

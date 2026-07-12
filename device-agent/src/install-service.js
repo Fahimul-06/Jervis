@@ -1,0 +1,3 @@
+import path from 'path';import { fileURLToPath } from 'url';import { Service } from 'node-windows';
+if(process.platform!=='win32')throw new Error('Windows service installation is only supported on Windows.');
+const here=path.dirname(fileURLToPath(import.meta.url));const svc=new Service({name:'JERVIS Device Agent',description:'Secure JERVIS local device control agent',script:path.join(here,'index.js'),nodeOptions:['--max_old_space_size=256'],wait:2,grow:.5,maxRestarts:10});svc.on('install',()=>{svc.start();console.log('JERVIS Device Agent installed and started. It will auto-start with Windows.');});svc.on('alreadyinstalled',()=>console.log('Service is already installed.'));svc.on('error',console.error);svc.install();

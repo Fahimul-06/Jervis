@@ -1,7 +1,8 @@
+import { authFetch } from './auth';
 const API = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
 
 async function jsonFetch(path: string, init?: RequestInit) {
-  const response = await fetch(`${API}${path}`, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers || {}) } });
+  const response = await authFetch(`${API}${path}`, { ...init, headers: { 'content-type': 'application/json', ...(init?.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(body?.error?.message || body?.message || `Request failed: ${response.status}`) as Error & { body?: unknown; status?: number };

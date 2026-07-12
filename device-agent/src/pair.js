@@ -1,8 +1,7 @@
 import 'dotenv/config';
 import os from 'os';
-const server=(process.env.JERVIS_SERVER_URL||'http://localhost:5000').replace(/\/$/,'');
-const response=await fetch(`${server}/api/devices/pair`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:os.hostname(),platform:process.platform,deviceType:'computer'})});
-if(!response.ok) throw new Error(await response.text());
-const data=await response.json();
-console.log('\nAdd these values to device-agent/.env:\n');
-console.log(`JERVIS_SERVER_URL=${server}`); console.log(`JERVIS_DEVICE_ID=${data.deviceId}`); console.log(`JERVIS_PAIRING_TOKEN=${data.pairingToken}`);
+import readline from 'readline/promises';
+import { stdin as input, stdout as output } from 'process';
+import { saveSecureConfig, secureConfigPath } from './secureStore.js';
+const rl=readline.createInterface({input,output});
+try{const server=(process.env.JERVIS_SERVER_URL||await rl.question('JERVIS server URL [http://localhost:5000]: ')||'http://localhost:5000').replace(/\/$/,'');const email=process.env.JERVIS_EMAIL||await rl.question('Account email: ');const password=process.env.JERVIS_PASSWORD||await rl.question('Account password: ');const login=await fetch(`${server}/api/auth/login`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password})});const loginJson=await login.json();if(!login.ok)throw new Error(loginJson.error?.message||'Login failed');const response=await fetch(`${server}/api/devices/pair`,{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${loginJson.data.accessToken}`},body:JSON.stringify({name:os.hostname(),platform:process.platform,deviceType:'computer'})});const json=await response.json();if(!response.ok)throw new Error(json.error?.message||'Pairing failed');const data=json.data;saveSecureConfig({serverUrl:server,deviceId:data.deviceId,pairingToken:data.pairingToken,allowedPaths:(process.env.JERVIS_ALLOWED_PATHS||`${os.homedir()}\\Documents,${os.homedir()}\\Downloads`).split(',').map(x=>x.trim()),screenshotDir:process.env.JERVIS_SCREENSHOT_DIR||'./screenshots'});console.log(`\nDevice paired securely. Credentials encrypted at:\n${secureConfigPath}\n`);}finally{rl.close();}

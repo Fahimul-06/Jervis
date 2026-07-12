@@ -1,0 +1,15 @@
+{
+  "name": "jervis-device-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"start":"node src/index.js","dev":"node --watch src/index.js","pair":"node src/pair.js"},
+  "dependencies": {
+    "clipboardy":"^4.0.0",
+    "dotenv":"^16.4.5",
+    "open":"^10.1.0",
+    "screenshot-desktop":"^1.15.1",
+    "socket.io-client":"^4.8.1",
+    "systeminformation":"^5.23.8"
+  }
+}
